@@ -14,47 +14,38 @@ using namespace f_star;
 template<typename Tnode>
 FStar<Tnode>::FStar() {
     //this->Nodes = new map<int, Node*>();
-    this->Edges = new map<int, FStarNodeEdges<Tnode>*>();
+    this->Edges = new std::map<Tnode, FStarNodeEdges<Tnode>*>();
 }
 template<typename Tnode>
-FStarNodeEdges<Tnode> * FStar<Tnode>::_findNodeEdges_encap(Tnode *node) {
-    auto it = this->Edges->find(node->id);
+FStarNodeEdges<Tnode> * FStar<Tnode>::_findNodeEdges_encap(Tnode node) {
+    auto it = this->Edges->find(node);
     if (it == this->Edges->end()) {
         return nullptr;
     }
     return it->second;
 }
 template<typename Tnode>
-FStarNodeEdges<Tnode> * FStar<Tnode>::_addNode_encap(Tnode *node) {
-    if (this->Edges->find(node->id) != this->Edges->end()) {
-        throw std::invalid_argument("Node with id" + to_string(node->id) + " already exists.");
-    }
-
-    if (node->x > this->maxX) {
-        this->maxX = node->x;
-    }
-    if (node->x < this->minX) {
-        this->minX = node->x;
-    }
-    if (node->y > this->maxY) {
-        this->maxY = node->y;
-    }
-    if (node->y < this->minY) {
-        this->minY = node->y;
-    }
-
-    FStarNodeEdges<Tnode>* nodeRecord = new FStarNodeEdges<Tnode>();
-    nodeRecord->node_from = node;
-    (*this->Edges)[node->id] = nodeRecord;
-    return nodeRecord;
+FStarNodeEdges<Tnode> * FStar<Tnode>::_addNode_encap(Tnode node) {
+    // if (this->Edges->find(node) != this->Edges->end()) {
+    //     throw std::invalid_argument("Node with id already exists.");
+    // }
+    //
+    // FStarNodeEdges<Tnode>* nodeRecord = new FStarNodeEdges<Tnode>(node);
+    // //nodeRecord->node_from = node;
+    // (*this->Edges)[node] = nodeRecord;
+    // return nodeRecord;
+    auto [it, inserted] = Edges->try_emplace(node, FStarNodeEdges<Tnode>{node});
+    if (!inserted)
+        throw std::invalid_argument("Node already exists.");
+    return it->second;
 }
 
 /// Return: index of node_to in FStarNodeEdges _edges vector; -1 if not found
 template<typename Tnode>
-int FStar<Tnode>::_findEdgeEntryIndex_encap(Tnode *node_to, FStarNodeEdges<Tnode> *_fsr_edges) {
+int FStar<Tnode>::_findEdgeEntryIndex_encap(Tnode node_to, FStarNodeEdges<Tnode> *_fsr_edges) {
     int index = 0;
-    for (FStarEdgeEntry edge: *_fsr_edges->_edges) {
-        if (edge.node_to == node_to) {
+    for (FStarEdgeEntry<Tnode*> edge: *_fsr_edges->_edges) {
+        if (*edge.node_to == node_to) {
             return index;
         }
         index++;
@@ -63,19 +54,19 @@ int FStar<Tnode>::_findEdgeEntryIndex_encap(Tnode *node_to, FStarNodeEdges<Tnode
 }
 
 template<typename Tnode>
-void FStar<Tnode>::addNode(Tnode *node) {
+void FStar<Tnode>::addNode(Tnode node) {
     this->_addNode_encap(node);
 }
 
 template<typename Tnode>
-void FStar<Tnode>::deleteNode(int nodeFrom) {
-    auto mapEntry = this->Edges->find(nodeFrom);
+void FStar<Tnode>::deleteNode(Tnode node) {
+    auto mapEntry = this->Edges->find(node);
     if (mapEntry == this->Edges->end()) {
         //node is not in fStar
         return;
     }
     FStarNodeEdges<Tnode>* nodeEdgesToDelete = mapEntry->second;
-    for (FStarEdgeEntry edge: *nodeEdgesToDelete->_edges) {
+    for (FStarEdgeEntry<Tnode> edge: *nodeEdgesToDelete->_edges) {
         Tnode* neigbour = edge.node_to;
         auto mapEntryN = this->Edges->find(neigbour->id);
         if (mapEntryN == this->Edges->end()) {
@@ -95,7 +86,7 @@ void FStar<Tnode>::deleteNode(int nodeFrom) {
 }
 
 template<typename Tnode>
-void FStar<Tnode>::addEdge(Tnode *from, Tnode *to, float weight, bool oneway) {
+void FStar<Tnode>::addEdge(Tnode from, Tnode to, float weight, bool oneway) {
     FStarNodeEdges<Tnode>* _fsr_nodeFromEdges = this->_findNodeEdges_encap(from);
     if (_fsr_nodeFromEdges == nullptr) {
         //Node does not exist jet
@@ -106,27 +97,29 @@ void FStar<Tnode>::addEdge(Tnode *from, Tnode *to, float weight, bool oneway) {
     if (_fsr_nodeToEdges == nullptr) {
         _fsr_nodeToEdges = this->_addNode_encap(to);
     }
+    Tnode* node_to_ptr = &_fsr_nodeToEdges->node_from;
 
     int edgeIndex = this->_findEdgeEntryIndex_encap(to, _fsr_nodeFromEdges);
     if (edgeIndex != -1) {
-        std::cerr << "Edge from " << _fsr_nodeFromEdges->node_from->id << " to " << to->id << " already exists. Ignoring error rewriting value" << std::endl;
+        //std::cerr << "Edge from " << _fsr_nodeFromEdges->node_from << " to " << to << " already exists. Ignoring error rewriting value" << std::endl;
+        std::cerr << "Edge from - to already exists. Ignoring error rewriting value" << std::endl;
         _fsr_nodeFromEdges->_edges->erase(_fsr_nodeFromEdges->_edges->begin() + edgeIndex);
         this->numEdges--;
     }
 
-    FStarEdgeEntry edge = FStarEdgeEntry<Tnode>();
-    edge.node_to = to;
-    edge.weight = weight;
+    FStarEdgeEntry<Tnode*> edge {node_to_ptr ,weight};
+    // edge.node_to = to;
+    // edge.weight = weight;
 
     _fsr_nodeFromEdges->_edges->push_back(edge);
-    this->numEdges++;
+    ++this->numEdges;
     if (!oneway) {
         this->addEdge(to,from,weight, true);
     }
 }
 
 template<typename Tnode>
-void FStar<Tnode>::deleteEdge(int fromNodeId, int toNodeId, bool oneway) {
+void FStar<Tnode>::deleteEdge(Tnode fromNodeId, Tnode toNodeId, bool oneway) {
     auto mapEntryFrom = this->Edges->find(fromNodeId);
     if (mapEntryFrom == this->Edges->end()) {
         return; //node is not in fStar
@@ -149,7 +142,7 @@ void FStar<Tnode>::deleteEdge(int fromNodeId, int toNodeId, bool oneway) {
 }
 
 template<typename Tnode>
-void FStar<Tnode>::modifieEdge(int from, int to, float newWeight, bool oneway) {
+void FStar<Tnode>::modifieEdge(Tnode from, Tnode to, float newWeight, bool oneway) {
     auto mapEntryFrom = this->Edges->find(from);
     if (mapEntryFrom == this->Edges->end()) {
         return; //node is not in fStar
@@ -157,7 +150,7 @@ void FStar<Tnode>::modifieEdge(int from, int to, float newWeight, bool oneway) {
     FStarNodeEdges<Tnode>* fromEntry = mapEntryFrom->second;
     FStarEdgeEntry<Tnode>* edgeEntryToMod = nullptr;
      for (FStarEdgeEntry<Tnode>& edge: *fromEntry->_edges) {
-        if (edge.node_to->id == to) {
+        if (edge.node_to == to) {
             edgeEntryToMod = &edge;
             break;
         }
